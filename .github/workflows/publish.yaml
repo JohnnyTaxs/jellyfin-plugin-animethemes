@@ -16,6 +16,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
@@ -29,3 +32,37 @@ jobs:
           name: AnimeThemes ${{ github.ref_name }}
           generate_release_notes: true
           files: release/**/*.zip
+
+      - name: Update plugin manifest
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          zip_path="$(find release -type f -name '*.zip' -print -quit)"
+          zip_name="$(basename "$zip_path")"
+          version="${RELEASE_TAG#v}"
+          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            version="${version}.0"
+          fi
+          checksum="$(md5sum "$zip_path" | cut -d ' ' -f 1)"
+          source_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${zip_name}"
+
+          jq --arg checksum "$checksum" \
+             --arg sourceUrl "$source_url" \
+             --arg version "$version" \
+             '. [0].versions += [{
+               checksum: $checksum,
+               changelog: "Published from GitHub Actions",
+               targetAbi: "10.11.3.0",
+               sourceUrl: $sourceUrl,
+               timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
+               version: $version
+             }]' manifest.json > manifest.json.tmp
+          mv manifest.json.tmp manifest.json
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add manifest.json
+          git commit -m "Update manifest for ${version}"
+          git push origin HEAD:main
