@@ -1,20 +1,28 @@
 [
-    {
-        "category": "Metadata",
-        "description": "Plugin for Jellyfin that fetches anime themes (OPs and EDs) from animethemes.moe.\n**Since the AniDB ID is used to find the matching themes, you'll need to install the AniDB plugin.**\n",
-        "guid": "086022b5-29fb-4f89-a298-3d595492a5ed",
-        "name": "AnimeThemes",
-        "overview": "Plugin for Jellyfin that fetches anime themes (OPs and EDs) from animethemes.moe",
-        "owner": "JohnnyTaxs",
-        "versions": [
-            {
-                "checksum": "ab25b9de4cb670279375c24a22df2b5f",
-                "changelog": "Published from GitHub Actions",
-                "targetAbi": "10.11.3.0",
-                "sourceUrl": "https://github.com/JohnnyTaxs/jellyfin-plugin-animethemes/releases/download/v7.0.2/animethemes_7.0.0.0.zip",
-                "timestamp": "2026-09-12T21:44:47Z",
-                "version": "7.0.2.0"
-            }
-        ]
-    }
+  {
+    "category": "Metadata",
+    "description": "Plugin for Jellyfin that fetches anime themes (OPs and EDs) from animethemes.moe.\n**Since the AniDB ID is used to find the matching themes, you'll need to install the AniDB plugin.**\n",
+    "guid": "086022b5-29fb-4f89-a298-3d595492a5ed",
+    "name": "AnimeThemes",
+    "overview": "Plugin for Jellyfin that fetches anime themes (OPs and EDs) from animethemes.moe",
+    "owner": "JohnnyTaxs",
+    "versions": [
+      {
+        "checksum": "5b25ac6a589c8482162e001d992d080b",
+        "changelog": "Published from GitHub Actions",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/JohnnyTaxs/jellyfin-plugin-animethemes/releases/download/v8.0.0/animethemes_8.0.0.0.zip",
+        "timestamp": "2026-10-20T21:58:40Z",
+        "version": "8.0.0.0"
+      },
+      {
+        "checksum": "ab25b9de4cb670279375c24a22df2b5f",
+        "changelog": "Published from GitHub Actions",
+        "targetAbi": "10.11.3.0",
+        "sourceUrl": "https://github.com/JohnnyTaxs/jellyfin-plugin-animethemes/releases/download/v7.0.2/animethemes_7.0.0.0.zip",
+        "timestamp": "2026-09-12T21:44:47Z",
+        "version": "7.0.2.0"
+      }
+    ]
+  }
 ]
