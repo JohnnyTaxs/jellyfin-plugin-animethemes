@@ -22,5 +22,5 @@ public record Anime(
     /// <summary>
     /// Gets the AniDB ID of this anime if available in payload.
     /// </summary>
-    public int? AniDbId => Resources.FirstOrDefault(it => it.Site == Sites.ANIDB)?.ExternalId;
+    public int? AniDbId => Resources?.FirstOrDefault(it => it.Site == Sites.ANIDB)?.ExternalId;
 }

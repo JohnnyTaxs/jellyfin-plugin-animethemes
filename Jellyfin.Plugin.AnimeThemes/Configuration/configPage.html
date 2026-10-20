@@ -16,8 +16,8 @@
 
         .at-tab-header h3 {
             cursor: pointer;
-            background: white;
-            color: black;
+            background: rgba(128, 128, 128, 0.25);
+            color: inherit;
             padding: 0.5em;
             transform: translate(0, -19px);
             transition: height 100ms ease-out;
@@ -38,7 +38,7 @@
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="DegreeOfParallelism">Degree of
                             Parallelism</label>
-                        <input id="DegreeOfParallelism" name="DegreeOfParallelism" type="number" is="emby-input" min="0"
+                        <input id="DegreeOfParallelism" name="DegreeOfParallelism" type="number" is="emby-input" min="1"
                                max="8" step="1"/>
                         <div class="fieldDescription">How many files should be downloaded simultaneously.</div>
                     </div>
@@ -183,20 +183,40 @@
             };
 
             var config = {};
+            var loaded = false;
 
             const seriesTitle = document.querySelector("#at-series-title");
             const moviesTitle = document.querySelector("#at-movies-title");
 
-            async function getLibraries() {
-                const items = await ApiClient.getItems();
-                if (!items || !items.Items) {
-                    return [];
-                }
+            function defaultMediaSettings() {
+                return {
+                    FetchType: 'None',
+                    IgnoreOverlapping: false,
+                    IgnoreThemesWithCredits: false,
+                    IgnoreEDs: false,
+                    IgnoreOPs: false,
+                    Volume: 1
+                };
+            }
 
-                return items.Items;
+            /**
+             * Returns the object holding AudioSettings/VideoSettings for the selected tab, creating missing parts.
+             */
+            function getTarget() {
+                var target = seriesTitle.matches(".selected")
+                    ? config
+                    : (config.MovieSettings = config.MovieSettings || {});
+
+                target.AudioSettings = target.AudioSettings || defaultMediaSettings();
+                target.VideoSettings = target.VideoSettings || defaultMediaSettings();
+                return target;
             }
 
             function selectMovies() {
+                if (!loaded) {
+                    return;
+                }
+
                 // Make sure we grab the changes before switching.
                 readConfigFromHtml();
 
@@ -208,6 +228,10 @@
             }
 
             function selectSeries() {
+                if (!loaded) {
+                    return;
+                }
+
                 readConfigFromHtml();
 
                 moviesTitle.classList.remove("selected");
@@ -220,28 +244,26 @@
              * Reads the current config from HTML, respecting the currently selected tab.
              */
             function readConfigFromHtml() {
-                config.DegreeOfParallelism = document.querySelector('#DegreeOfParallelism').value;
+                config.DegreeOfParallelism = Math.max(1, parseInt(document.querySelector('#DegreeOfParallelism').value, 10) || 1);
                 config.ForceSync = document.querySelector('#ForceSync').checked;
                 config.IncludeLibraries = document.querySelector('#IncludeLibraries').value;
                 config.ExcludeLibraries = document.querySelector('#ExcludeLibraries').value;
 
-                const target = seriesTitle.matches(".selected")
-                    ? config
-                    : (config.MovieSettings ?? {});
+                const target = getTarget();
 
                 target.AudioSettings.FetchType = document.querySelector('#AudioFetchType').value;
                 target.AudioSettings.IgnoreOverlapping = document.querySelector('#AudioIgnoreOverlapping').checked;
                 target.AudioSettings.IgnoreThemesWithCredits = document.querySelector('#AudioIgnoreThemesWithCredits').checked;
                 target.AudioSettings.IgnoreEDs = document.querySelector('#AudioIgnoreEDs').checked;
                 target.AudioSettings.IgnoreOPs = document.querySelector('#AudioIgnoreOPs').checked;
-                target.AudioSettings.Volume = document.querySelector('#AudioVolume').value;
+                target.AudioSettings.Volume = parseFloat(document.querySelector('#AudioVolume').value) || 0;
 
                 target.VideoSettings.FetchType = document.querySelector('#VideoFetchType').value;
                 target.VideoSettings.IgnoreOverlapping = document.querySelector('#VideoIgnoreOverlapping').checked;
                 target.VideoSettings.IgnoreThemesWithCredits = document.querySelector('#VideoIgnoreThemesWithCredits').checked;
                 target.VideoSettings.IgnoreEDs = document.querySelector('#VideoIgnoreEDs').checked;
                 target.VideoSettings.IgnoreOPs = document.querySelector('#VideoIgnoreOPs').checked;
-                target.VideoSettings.Volume = document.querySelector('#VideoVolume').value;
+                target.VideoSettings.Volume = parseFloat(document.querySelector('#VideoVolume').value) || 0;
             }
 
 
@@ -254,9 +276,7 @@
                 document.querySelector('#IncludeLibraries').value = config.IncludeLibraries;
                 document.querySelector('#ExcludeLibraries').value = config.ExcludeLibraries;
 
-                const target = seriesTitle.matches(".selected")
-                    ? config
-                    : (config.MovieSettings ?? {});
+                const target = getTarget();
 
                 document.querySelector('#AudioFetchType').value = target.AudioSettings.FetchType;
                 document.querySelector('#AudioIgnoreOverlapping').checked = target.AudioSettings.IgnoreOverlapping;
@@ -278,6 +298,7 @@
                     Dashboard.showLoadingMsg();
 
                     config = await ApiClient.getPluginConfiguration(AnimeThemesConfig.pluginUniqueId);
+                    loaded = true;
                     writeConfigToHtml();
 
                     Dashboard.hideLoadingMsg();
@@ -285,6 +306,29 @@
 
             document.querySelector('#AnimeThemesConfigForm')
                 .addEventListener('submit', function (e) {
+                    e.preventDefault();
+
+                    if (!loaded) {
+                        return false;
+                    }
+
+                    var valid = true;
+                    ['IncludeLibraries', 'ExcludeLibraries'].forEach(function (id) {
+                        var value = document.querySelector('#' + id).value;
+                        try {
+                            if (value) {
+                                new RegExp(value);
+                            }
+                        } catch (err) {
+                            Dashboard.alert('Invalid regular expression in ' + id + ': ' + err.message);
+                            valid = false;
+                        }
+                    });
+
+                    if (!valid) {
+                        return false;
+                    }
+
                     Dashboard.showLoadingMsg();
 
                     readConfigFromHtml();

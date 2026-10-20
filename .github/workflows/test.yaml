@@ -1,0 +1,24 @@
+name: '🧪 Test Plugin'
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test Jellyfin.Plugin.AnimeThemes.Tests/Jellyfin.Plugin.AnimeThemes.Tests.csproj

@@ -3,14 +3,20 @@ name: '🚀 Release Plugin'
 on:
   push:
     tags:
-      - '*'
+      # Only plain release tags such as v8.0.1 or 8.0.1.0. Anything else would end up as an invalid version in the manifest.
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
   contents: write
 
 jobs:
   build:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/build.yaml@master
+    # Pinned on purpose: the reusable workflow decides the target framework, which must match the targetAbi.
+    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/build.yaml@5f6990aa467ae0a6b62c91ad0502e3e1a53117ce
+    with:
+      dotnet-version: '10.0.x'
+      dotnet-target: 'net10.0'
 
   publish:
     needs: build
@@ -25,44 +31,96 @@ jobs:
           name: build-artifact
           path: release
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: AnimeThemes ${{ github.ref_name }}
-          generate_release_notes: true
-          files: release/**/*.zip
-
-      - name: Update plugin manifest
+      - name: Verify artifact
+        id: artifact
         shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           zip_path="$(find release -type f -name '*.zip' -print -quit)"
-          zip_name="$(basename "$zip_path")"
-          version="${RELEASE_TAG#v}"
-          if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            version="${version}.0"
+          [[ -n "$zip_path" ]] || { echo "No zip artifact found"; exit 1; }
+
+          meta="$(unzip -p "$zip_path" meta.json)"
+          version="$(jq -r .version <<<"$meta")"
+          target_abi="$(jq -r .targetAbi <<<"$meta")"
+
+          tag_version="${RELEASE_TAG#v}"
+          while [[ "$(tr -cd '.' <<<"$tag_version" | wc -c)" -lt 3 ]]; do
+            tag_version="${tag_version}.0"
+          done
+
+          if [[ "$version" != "$tag_version" ]]; then
+            echo "::error::Tag ${RELEASE_TAG} (${tag_version}) does not match the built plugin version ${version}. Bump build.yaml and Directory.Build.props before tagging."
+            exit 1
           fi
-          checksum="$(md5sum "$zip_path" | cut -d ' ' -f 1)"
+
+          if ! unzip -p "$zip_path" Jellyfin.Plugin.AnimeThemes.dll >/dev/null; then
+            echo "::error::Plugin DLL missing from artifact"
+            exit 1
+          fi
+
+          {
+            echo "zip_path=${zip_path}"
+            echo "version=${version}"
+            echo "target_abi=${target_abi}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract release notes
+        shell: bash
+        env:
+          VERSION: ${{ steps.artifact.outputs.version }}
+        run: |
+          set -euo pipefail
+          short="${VERSION%.0}"
+          while [[ "$short" == *.0 && "$(tr -cd '.' <<<"$short" | wc -c)" -gt 2 ]]; do short="${short%.0}"; done
+          awk -v v="$short" '
+            /^## / { if (found) exit; if (index($0, "## " v) == 1) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          [[ -s release-notes.md ]] || echo "See CHANGELOG.md" > release-notes.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: AnimeThemes ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: ${{ steps.artifact.outputs.zip_path }}
+
+      - name: Update plugin manifest
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          ZIP_PATH: ${{ steps.artifact.outputs.zip_path }}
+          VERSION: ${{ steps.artifact.outputs.version }}
+          TARGET_ABI: ${{ steps.artifact.outputs.target_abi }}
+        run: |
+          set -euo pipefail
+          zip_name="$(basename "$ZIP_PATH")"
+          checksum="$(md5sum "$ZIP_PATH" | cut -d ' ' -f 1)"
           source_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${zip_name}"
+
+          # The tag checkout is detached; the manifest lives on main.
+          git fetch origin main
+          git checkout -B main origin/main
 
           jq --arg checksum "$checksum" \
              --arg sourceUrl "$source_url" \
-             --arg version "$version" \
-             '. [0].versions += [{
+             --arg version "$VERSION" \
+             --arg targetAbi "$TARGET_ABI" \
+             '.[0].versions = ([{
                checksum: $checksum,
                changelog: "Published from GitHub Actions",
-               targetAbi: "10.11.3.0",
+               targetAbi: $targetAbi,
                sourceUrl: $sourceUrl,
                timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ")),
                version: $version
-             }]' manifest.json > manifest.json.tmp
+             }] + (.[0].versions | map(select(.version != $version))))' manifest.json > manifest.json.tmp
           mv manifest.json.tmp manifest.json
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add manifest.json
-          git commit -m "Update manifest for ${version}"
-          git push origin HEAD:main
+          git commit -m "Update manifest for ${VERSION}"
+          git push origin main

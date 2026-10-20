@@ -19,6 +19,7 @@ namespace Jellyfin.Plugin.AnimeThemes.Tasks;
 public abstract class BaseThemeSearchTask
 {
     private const int ChunkSize = 50;
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
     private readonly ILogger _logger;
     private readonly AnimeThemesDownloader _downloader;
     private readonly ILibraryManager _libraryManager;
@@ -47,7 +48,17 @@ public abstract class BaseThemeSearchTask
     {
         _logger.LogInformation("Starting theme search");
         var configuration = Plugin.Instance!.Configuration;
-        var applicable = GetApplicableItems(configuration);
+        List<BaseItem> applicable;
+        try
+        {
+            applicable = GetApplicableItems(configuration);
+        }
+        catch (ArgumentException e)
+        {
+            _logger.LogError(e, "Invalid library include/exclude regular expression in the plugin configuration -- aborting");
+            return;
+        }
+
         if (applicable.Count == 0)
         {
             _logger.LogInformation("No applicable items found -- aborting");
@@ -71,20 +82,38 @@ public abstract class BaseThemeSearchTask
             .Where(it => _downloader.ShouldUpdate(it, configuration))
             .Chunk(ChunkSize))
         {
-            await foreach (var itemWithAnime in _downloader.ResolveItems(chunk, configuration, cancellationToken).ConfigureAwait(false))
+            try
             {
-                itemsWithAnime.Add(itemWithAnime);
+                await foreach (var itemWithAnime in _downloader.ResolveItems(chunk, configuration, cancellationToken).ConfigureAwait(false))
+                {
+                    itemsWithAnime.Add(itemWithAnime);
+                }
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // Don't let one failing API request abort the whole run.
+                _logger.LogError(e, "Failed to look up a chunk of {Count} items -- skipping it", chunk.Length);
             }
         }
 
         var semaphore = new SemaphoreSlim(1, 1);
         int counter = 0;
-        int count = items.Count;
+        int count = itemsWithAnime.Count;
+        var parallelism = Math.Clamp(configuration.DegreeOfParallelism, 1, 32);
 
         // Process in parallel
-        await Parallel.ForEachAsync(itemsWithAnime, new ParallelOptions { CancellationToken = cancellationToken, MaxDegreeOfParallelism = configuration.DegreeOfParallelism }, async (item, ct) =>
+        await Parallel.ForEachAsync(itemsWithAnime, new ParallelOptions { CancellationToken = cancellationToken, MaxDegreeOfParallelism = parallelism }, async (item, ct) =>
         {
-            await _downloader.HandleAsync(item.Item, item.Anime.First(), configuration, ct).ConfigureAwait(false);
+            try
+            {
+                await _downloader.HandleAsync(item.Item, item.Anime, configuration, ct).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // A single broken item must not abort the remaining ones.
+                _logger.LogError(e, "[{Id}] Failed to process {Name}", item.Item.Id, item.Item.Name);
+            }
+
             await semaphore.WaitAsync(ct).ConfigureAwait(false);
             try
             {
@@ -103,11 +132,11 @@ public abstract class BaseThemeSearchTask
     private List<BaseItem> GetApplicableItems(PluginConfiguration configuration)
     {
         var includeRegex = !string.IsNullOrWhiteSpace(configuration.IncludeLibraries)
-            ? new Regex(configuration.IncludeLibraries, RegexOptions.IgnoreCase | RegexOptions.Compiled)
-            : new Regex("^.*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            ? new Regex(configuration.IncludeLibraries, RegexOptions.IgnoreCase, RegexTimeout)
+            : new Regex("^.*$", RegexOptions.IgnoreCase, RegexTimeout);
 
         var excludeRegex = !string.IsNullOrWhiteSpace(configuration.ExcludeLibraries)
-            ? new Regex(configuration.ExcludeLibraries, RegexOptions.IgnoreCase | RegexOptions.Compiled)
+            ? new Regex(configuration.ExcludeLibraries, RegexOptions.IgnoreCase, RegexTimeout)
             : null;
 
         var libraries = _libraryManager.GetItemList(new InternalItemsQuery { IncludeItemTypes = [BaseItemKind.CollectionFolder] });

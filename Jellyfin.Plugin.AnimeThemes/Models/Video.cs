@@ -27,5 +27,5 @@ public record Video(
     OverlapType Overlap,
     [property: JsonPropertyName("link")] string Link,
     [property: JsonPropertyName("nc")] bool Creditless,
-    [property: JsonPropertyName("audio")] Audio Audio
+    [property: JsonPropertyName("audio")] Audio? Audio
 );

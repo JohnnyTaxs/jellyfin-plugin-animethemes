@@ -50,7 +50,34 @@ public sealed class PollyResilienceHandler : DelegatingHandler
         MaxRetryAttempts = 3,
         BackoffType = DelayBackoffType.Exponential,
         Delay = TimeSpan.FromSeconds(2),
-        DelayGenerator = args => ValueTask.FromResult(
-            args.Outcome.Result?.Headers.RetryAfter?.Delta)
+        DelayGenerator = args => ValueTask.FromResult(GetRetryAfter(args.Outcome.Result)),
+        OnRetry = args =>
+        {
+            // The response of a failed attempt is never returned to the caller, so release it.
+            args.Outcome.Result?.Dispose();
+            return default;
+        }
     };
+
+    private static TimeSpan? GetRetryAfter(HttpResponseMessage? response)
+    {
+        var retryAfter = response?.Headers.RetryAfter;
+        if (retryAfter is null)
+        {
+            return null;
+        }
+
+        if (retryAfter.Delta is { } delta)
+        {
+            return delta;
+        }
+
+        if (retryAfter.Date is { } date)
+        {
+            var wait = date - DateTimeOffset.UtcNow;
+            return wait > TimeSpan.Zero ? wait : TimeSpan.Zero;
+        }
+
+        return null;
+    }
 }

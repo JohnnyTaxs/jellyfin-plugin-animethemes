@@ -1,9 +1,9 @@
 ---
 name: "AnimeThemes"
 guid: "086022b5-29fb-4f89-a298-3d595492a5ed"
-version: 7
-targetAbi: "10.11.3.0"
-framework: "net9.0"
+version: 8
+targetAbi: "12.2.0.0"
+framework: "net10.0"
 overview: "Plugin for Jellyfin that fetches anime themes (OPs and EDs) from animethemes.moe"
 description: >
   Plugin for Jellyfin that fetches anime themes (OPs and EDs) from animethemes.moe.
@@ -15,4 +15,8 @@ owner: "JohnnyTaxs"
 artifacts:
   - "Jellyfin.Plugin.AnimeThemes.dll"
 changelog: |-
-  - fix: actually fill chunks (#43) @JohnnyTaxs
+  - feat: target Jellyfin 12.2 (.NET 10)
+  - fix: ForceSync now re-evaluates already populated items
+  - fix: failed or cancelled downloads no longer leave corrupt files behind
+  - fix: a single failing item no longer aborts the whole task
+  - fix: items sharing an AniDB ID are all processed

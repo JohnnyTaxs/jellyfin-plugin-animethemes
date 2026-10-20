@@ -17,6 +17,8 @@ namespace Jellyfin.Plugin.AnimeThemes;
 /// </summary>
 public sealed class AnimeThemesApi : IDisposable
 {
+    private const int MaxPageSize = 100;
+
     private readonly HttpClient _client;
     private readonly ILogger<AnimeThemesDownloader> _logger;
 
@@ -43,33 +45,54 @@ public sealed class AnimeThemesApi : IDisposable
 
         _logger.LogInformation("Looking up {Count} shows in the AnimeThemes db...", idList.Length);
 
-        if (idList.Length > 100)
+        if (idList.Length == 0)
+        {
+            return [];
+        }
+
+        if (idList.Length > MaxPageSize)
         {
             throw new ArgumentOutOfRangeException(nameof(ids));
         }
 
-        // @formatter:off
-        var arguments = new Dictionary<string, string?>
+        var allAnime = new List<Anime>();
+        for (var page = 1; ; page++)
         {
-            { "filter[resource][external_id]", string.Join(",", idList.Select(it => it.ToString(CultureInfo.InvariantCulture))) },
-            { "filter[resource][site]", Sites.ANIDB },
-            { "filter[has]", "resources" },
-            { "page[size]", idList.Length.ToString(CultureInfo.InvariantCulture) },
-            { "include", "animethemes.animethemeentries.videos.audio,resources" },
-        };
-        // @formatter:on
+            // @formatter:off
+            var arguments = new Dictionary<string, string?>
+            {
+                { "filter[resource][external_id]", string.Join(",", idList.Select(it => it.ToString(CultureInfo.InvariantCulture))) },
+                { "filter[resource][site]", Sites.ANIDB },
+                { "filter[has]", "resources" },
+                { "page[size]", MaxPageSize.ToString(CultureInfo.InvariantCulture) },
+                { "page[number]", page.ToString(CultureInfo.InvariantCulture) },
+                { "include", "animethemes.animethemeentries.videos.audio,resources" },
+            };
+            // @formatter:on
 
-        var uri = QueryHelpers.AddQueryString("/anime/", arguments);
+            var uri = QueryHelpers.AddQueryString("/anime/", arguments);
 
-        _logger.LogInformation("Fetching from API: {Uri} (length={Length})", uri, uri.Length);
-        var result = await _client.GetAsync(uri, cancellationToken).ConfigureAwait(false);
-        result.EnsureSuccessStatusCode();
+            _logger.LogInformation("Fetching from API: {Uri} (length={Length})", uri, uri.Length);
+            using var result = await _client.GetAsync(uri, cancellationToken).ConfigureAwait(false);
+            result.EnsureSuccessStatusCode();
 
-        var content = await result.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await using var contentDisposal = content.ConfigureAwait(false);
+            var content = await result.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using var contentDisposal = content.ConfigureAwait(false);
 
-        var response = await JsonSerializer.DeserializeAsync<AnimeResponse>(content, cancellationToken: cancellationToken).ConfigureAwait(false);
-        var animeByAniId = response?.Anime.GroupBy(a => a.AniDbId!.Value).ToDictionary(a => a.Key, a => a.ToArray()) ?? new Dictionary<int, Anime[]>();
+            var response = await JsonSerializer.DeserializeAsync<AnimeResponse>(content, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var pageAnime = response?.Anime ?? [];
+            allAnime.AddRange(pageAnime);
+
+            if (pageAnime.Count < MaxPageSize)
+            {
+                break;
+            }
+        }
+
+        var animeByAniId = allAnime
+            .Where(a => a.AniDbId.HasValue)
+            .GroupBy(a => a.AniDbId!.Value)
+            .ToDictionary(a => a.Key, a => a.ToArray());
 
         _logger.LogInformation("Of a total of {TotalCount} shows, we were able to find entries for {FinalCount} shows", idList.Length, animeByAniId.Count);
 
