@@ -1,0 +1,6 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // The skill groups this project uses, from the owner's dotfiles (~/dotfiles/skill-groups): one copy of each
+  // skill for every project. Where that directory does not exist the entries are skipped.
+  "skills": ["~/dotfiles/skill-groups/dotnet", "~/dotfiles/skill-groups/security"]
+}
